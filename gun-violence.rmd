@@ -222,7 +222,9 @@ delta[which.min(delta$count), ]
 
 When the relative number of incidents is plotted, it becomes obvious
 that this day also marks the turning point of incident numbers:
-Starting this day, numbers begin to rise again.
+Starting this day, numbers begin to rise again. If the first-order differences
+are plotted, this day marks the zero-crossing into the realm of positive
+numbers, indicating change of curvature.
 
 ```{r echo=FALSE, warning=FALSE}
 delta$dir <- c(NA, diff(delta$count, lag = 1, differences = 1))
@@ -251,13 +253,3 @@ b <- ggplot(delta, aes(date)) +
 
 grid.arrange(a, b, ncol=1)
 ```
-
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
