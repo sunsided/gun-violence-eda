@@ -1,0 +1,263 @@
+---
+title: "Gun Violence Data EDA"
+author: "Markus Mayer"
+date: "6 Juli 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Plotting
+# install.packages('ggplot2', dep = TRUE)
+library(ggplot2)
+library(gridExtra)
+
+# lubridate for date processing
+# install.packages('lubridate')
+library(lubridate)
+
+# tidyr and dplyr for data wrangling
+# install.packages('tidyr')
+# install.packages('dplyr')
+library(tidyr)
+library(dplyr)
+```
+
+## Data source
+
+The data inspected in this project is taken from the [gun violence data](https://github.com/jamesqo/gun-violence-data) set:
+
+> A comprehensive, accessible database that contains records of over 260k US gun violence incidents from January 2013 to March 2018.
+
+## Structure of the dataset
+
+```{r gv}
+gv <- read.csv('dataset/stage3.csv', nrows=100)
+```
+
+The dataset consists of about 240k observations of 29 variables. In order to
+show an issue with the dataset, only `100` rows were loaded:
+
+```{r dimensions, echo=FALSE}
+dim(gv)
+```
+
+The variables include the date and location of the incident, the number
+of guns involved, as well as information such as age, gender and relationship
+of the participants.
+
+```{r names, echo=FALSE}
+names(gv)
+```
+
+Here's the structure of the dataset after importing:
+
+```{r gv structure, echo=FALSE}
+str(gv)
+```
+
+Some variables such as `participant_gender` incorrectly appear as factors with
+high number of levels.
+
+```{r gender-factors, echo=FALSE}
+str(gv$participant_gender)
+```
+
+This is due to the way data is encoded as lists; in the gender example, one
+gender value is given for every person involved in the incident. Before
+investigating the data further, these lists should be unraveled into rows.
+
+In order to bring the data into a more usable format, the original CSV file
+was preprocessed in the Jupyter Notebook
+[dataset/split-dataset.ipynb](dataset/split-dataset.ipynb) using Python 
+and Pandas, creating four separate files,
+
+- `dataset/incidents.csv`,
+- `dataset/participants.csv`,
+- `dataset/gun_use.csv` and
+- `dataset/characteristics.csv`
+
+```{r}
+rm(gv)
+inc <- read.csv('dataset/incidents.csv')
+par <- read.csv('dataset/participants.csv')
+gun <- read.csv('dataset/gun_use.csv')
+cha <- read.csv('dataset/characteristics.csv')
+```
+
+We now find that we have `239677` incident records of `15` variables each:
+
+```{r echo=FALSE}
+inc <- mutate(inc, 
+       date = ymd(date), 
+       address = as.character(address),
+       location_description = as.character(location_description),
+       congressional_district = as.factor(congressional_district),
+       state_house_district = as.factor(state_house_district),
+       state_senate_district = as.factor(state_senate_district),
+       n_guns_involved = as.integer(n_guns_involved))
+str(inc)
+```
+
+There are `392323` participant records of `10` variables each:
+
+```{r echo=FALSE}
+par <- mutate(par, participant_name = as.character(participant_name))
+str(par)
+```
+
+There are `192452` gun use records of `4` variables each (excluding relations):
+
+```{r echo=FALSE}
+str(gun)
+```
+
+And finally
+
+There are `579820` characteristics of `2` variables (excluding relations):
+
+```{r echo=FALSE}
+str(cha)
+```
+
+## Univariate Plots
+
+First we're goint to look at the accumulated number of incidents over time.
+The dataset description mentions that for the year 2013, not much data was
+collected. We can see this as a highly noticeable dent at the January 1st,
+2014.
+
+```{r echo=FALSE}
+# For each occurrence, we accumulate the total number of occurrences
+# up to that date. We then group by date in order to obtain the number
+# of incidents recorded up to that day.
+occurrences <- aggregate(count ~ date, 
+                     data = data.frame(
+                                count=cumsum(rep(1, nrow(inc))),
+                                date=inc$date), 
+                     max)
+
+ggplot(occurrences, aes(date)) +
+    geom_line(aes(y=count)) +
+    scale_x_date(date_breaks = "1 year", 
+                 date_labels = '%Y', 
+                 date_minor_breaks = "1 months") +
+    ylab('occurrences (running total)') + 
+    xlab('date')
+```
+
+Removing the year 2013 from the plot, we can compare this to the regression
+line, a line for one incident per day and a line for 100 incidents per day.
+We find that the actual numbers slowly deviate from the trendline in a 
+quasi-cyclic manner; putting the numbers into relation with the hypothetical
+"one incident per day" and "one hundred incidents per day" lines demonstrate
+the sheer amount of incidents, being much higher than both of them.
+
+```{r echo=FALSE, warning=FALSE}
+occurrences_since_2014 <- subset(occurrences, date > date('2014-01-01'))
+
+diff_since_2014 <- occurrences_since_2014
+diff_since_2014$count <- occurrences_since_2014$date - 
+                                    min(occurrences_since_2014$date)
+
+diff100_since_2014 <- diff_since_2014 
+diff100_since_2014$count <- diff_since_2014$count * 100
+
+fit <- lm(formula = count ~ date,
+          data = subset(occurrences_since_2014))
+
+fit_since_2014 <- diff_since_2014 
+fit_since_2014$count <- predict(fit, fit_since_2014)
+
+occurrences_since_2014$type <- 'baseline'
+diff_since_2014$type <- 'diff'
+diff100_since_2014$type <- 'diff 100'
+fit_since_2014$type <- 'fit'
+
+df <- rbind(occurrences_since_2014, diff_since_2014, 
+            diff100_since_2014, fit_since_2014)
+rm(occurrences_since_2014, diff_since_2014, diff100_since_2014,  fit_since_2014)
+
+labels <- c("actual numbers", "one per day",  "100 per day", "regression")
+
+ggplot(df, aes(date)) +
+    geom_line(aes(y=count, col=type, linetype=type)) +
+    scale_y_continuous(limits = c(0, max(df$count))) +
+    scale_x_date(date_breaks = "1 year", 
+                 date_labels = '%Y', 
+                 date_minor_breaks = "3 months") +
+    scale_linetype_manual(labels = labels,
+                          values = c("solid", "dashed", "twodash", "dotted")) +
+    scale_color_manual(labels = labels, 
+                       values = c("black", "darkgray", "darkred", "#333333")) +
+    labs(title = "", # "Gun violence incidents since 2014", 
+         x = "date", 
+         y = "running total", 
+         col = "trend line", linetype = "trend line") +
+  theme(legend.position="bottom")
+```
+
+The regression line shows an average of `156.1` incidents per day.
+
+```{r echo=FALSE}
+fit$coefficients
+```
+
+When the (artificial) trend is removed, we obtain the number of
+incidents relative to the expected total number of incidents. A value of
+about 6000 for January 1st, 2014 implies that about 6000 more gun violence
+incedents occurred than the trendline suggests. The smallest relative number
+of incidents can be found at June 18th, 2016, with abour 3723 incidents
+less than expected.
+
+```{r echo=FALSE, warning=FALSE}
+baseline <- subset(df, type == 'baseline')
+regression <- subset(df, type == 'fit')
+delta <- baseline
+delta$count <- baseline$count - regression$count
+
+delta[which.min(delta$count), ]
+```
+
+When the relative number of incidents is plotted, it becomes obvious
+that this day also marks the turning point of incident numbers:
+Starting this day, numbers begin to rise again.
+
+```{r echo=FALSE, warning=FALSE}
+delta$dir <- c(NA, diff(delta$count, lag = 1, differences = 1))
+#delta$weight <- (delta$dir - min(delta$dir)) / 
+#                (max(delta$dir) - min(delta$dir))
+# delta$color <- rgb(colorRamp(c("red", "green"))(delta$weight) / 255)
+
+a <- ggplot(delta, aes(date)) +
+    geom_line(aes(y=count)) +
+    scale_x_date(date_breaks = "1 year", 
+                 date_labels = '%Y', 
+                 date_minor_breaks = "3 months") +
+    labs(title = "indicent counts relative to expectation",
+         x = "date", 
+         y = "# incidents relative to trend")
+
+b <- ggplot(delta, aes(date)) +
+    geom_smooth(aes(y=dir), method = 'loess', span = 0.1, 
+                color = 'black', size = 0.5) +
+    scale_x_date(date_breaks = "1 year", 
+                 date_labels = '%Y', 
+                 date_minor_breaks = "3 months") +
+    labs(title = "approximate trend direction",
+         x = "date", 
+         y = "1st order trend difference")
+
+grid.arrange(a, b, ncol=1)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
