@@ -78,7 +78,7 @@ and Pandas, creating four separate files,
 - `dataset/gun_use.csv` and
 - `dataset/characteristics.csv`
 
-```{r}
+```{r load}
 rm(gv)
 inc <- read.csv('dataset/incidents.csv')
 par <- read.csv('dataset/participants.csv')
@@ -88,36 +88,36 @@ cha <- read.csv('dataset/characteristics.csv')
 
 We now find that we have `239677` incident records of `15` variables each:
 
-```{r echo=FALSE}
+```{r mutate-inc, echo=FALSE}
 inc <- mutate(inc, 
        date = ymd(date), 
-       address = as.character(address),
-       location_description = as.character(location_description),
        congressional_district = as.factor(congressional_district),
        state_house_district = as.factor(state_house_district),
        state_senate_district = as.factor(state_senate_district),
-       n_guns_involved = as.integer(n_guns_involved))
+       n_guns_involved = as.integer(n_guns_involved),
+       source_url = as.character(source_url),
+       incident_url = as.character(incident_url))
 str(inc)
 ```
 
 There are `392323` participant records of `10` variables each:
 
-```{r echo=FALSE}
+```{r mutate-par, echo=FALSE}
 par <- mutate(par, participant_name = as.character(participant_name))
 str(par)
 ```
 
-There are `192452` gun use records of `4` variables each (excluding relations):
+There are `192452` gun use records of `5` variables each (including relations):
 
-```{r echo=FALSE}
+```{r gun, echo=FALSE}
 str(gun)
 ```
 
 And finally
 
-There are `579820` characteristics of `2` variables (excluding relations):
+There are `579820` characteristics of `3` variables (including relations):
 
-```{r echo=FALSE}
+```{r cha, echo=FALSE}
 str(cha)
 ```
 
@@ -128,7 +128,7 @@ The dataset description mentions that for the year 2013, not much data was
 collected. We can see this as a highly noticeable dent at the January 1st,
 2014.
 
-```{r echo=FALSE}
+```{r accumulated-totals, echo=FALSE}
 # For each occurrence, we accumulate the total number of occurrences
 # up to that date. We then group by date in order to obtain the number
 # of incidents recorded up to that day.
@@ -154,7 +154,7 @@ quasi-cyclic manner; putting the numbers into relation with the hypothetical
 "one incident per day" and "one hundred incidents per day" lines demonstrate
 the sheer amount of incidents, being much higher than both of them.
 
-```{r echo=FALSE, warning=FALSE}
+```{r totals-since-2014, echo=FALSE, warning=FALSE}
 occurrences_since_2014 <- subset(occurrences, date > date('2014-01-01'))
 
 diff_since_2014 <- occurrences_since_2014
@@ -200,7 +200,7 @@ ggplot(df, aes(date)) +
 
 The regression line shows an average of `156.1` incidents per day.
 
-```{r echo=FALSE}
+```{r totals-regression-coeffs, echo=FALSE}
 fit$coefficients
 ```
 
@@ -211,7 +211,7 @@ incedents occurred than the trendline suggests. The smallest relative number
 of incidents can be found at June 18th, 2016, with abour 3723 incidents
 less than expected.
 
-```{r echo=FALSE, warning=FALSE}
+```{r lowest-number-rel-trend, echo=FALSE, warning=FALSE}
 baseline <- subset(df, type == 'baseline')
 regression <- subset(df, type == 'fit')
 delta <- baseline
@@ -226,7 +226,7 @@ Starting this day, numbers begin to rise again. If the first-order differences
 are plotted, this day marks the zero-crossing into the realm of positive
 numbers, indicating change of curvature.
 
-```{r echo=FALSE, warning=FALSE}
+```{r change-in-totals, echo=FALSE, warning=FALSE}
 delta$dir <- c(NA, diff(delta$count, lag = 1, differences = 1))
 #delta$weight <- (delta$dir - min(delta$dir)) / 
 #                (max(delta$dir) - min(delta$dir))
@@ -249,7 +249,125 @@ b <- ggplot(delta, aes(date)) +
                  date_minor_breaks = "3 months") +
     labs(title = "approximate trend direction",
          x = "date", 
-         y = "1st order trend difference")
+         y = "incidents/day relative to trend")
 
 grid.arrange(a, b, ncol=1)
 ```
+
+Next is the distribution of incident counts per state. 
+The numbers differ by a fair amount, but are also not taking the size of the
+state's population into account, i.e. the number of incidents per capita
+could paint a different picture.
+Since the state, city, address, district, latitude and longitude information is
+correlated, we would expect to find similar information in these plots as well.
+The plot also shows the national mean (dotted) and median (dashed, gray)
+taken over the whole time range.
+
+```{r incidents-per-state, echo=FALSE, fig.width=6, fig.height=8}
+national_mean <- mean(summary(inc$state))
+national_median <- median(summary(inc$state))
+
+ggplot(aes(state), data=inc) +
+    geom_bar(width = 0.5) +
+    coord_flip() +
+    scale_x_discrete(limits = rev(levels(inc$state))) +
+    geom_abline(slope=0, intercept=national_mean,  
+                col = "darkred", 
+                lty = "dotted" ) +
+    geom_abline(slope=0, intercept=national_median, 
+                col = "black", 
+                lty = "dashed",
+                alpha = 0.5)
+```
+
+The next look would be at the cities with the most recorded incidents (limited
+to 20 for brevity). We find that the city with the most recorded incidents
+is Chicago, IL, whis coincides with the highest number of recorded incidents
+in any state. However, the second city in the list, Baltimore, is in Maryland,
+which has less than half the number of incidents of Illnois.
+Again, the numbers are put in relation to national mean (dotted red) and
+median (dashed gray) over the whole time range.
+
+```{r incidents-per-state, echo=FALSE}
+# Most ocurrences are "other", so we skip that
+cities_most <- sort(summary(inc$city_or_county), decreasing=T)[2:21]
+cities_most <- data.frame(name = factor(names(cities_most), 
+                                        levels = names(cities_most)),
+                          count = as.integer(cities_most),
+                          stringsAsFactors = T)
+ggplot(cities_most) +
+    geom_bar(aes(name, y = count), stat = "identity") +
+    coord_flip() +
+    scale_x_discrete(limits = rev(levels(cities_most$name))) +
+    geom_abline(slope=0, intercept=national_mean,  
+                col = "darkred", 
+                lty = "dotted" ) +
+    geom_abline(slope=0, intercept=national_median, 
+                col = "black", 
+                lty = "dashed",
+                alpha = 0.5)
+
+rm(cities_most)
+```
+
+Interestingly, we do find that Illinois has three times the number of incidents
+as Maryland, while Chicago has 2.7 times the number of incidents as Baltimore.
+
+```{r, echo=FALSE, include=FALSE}
+sum(inc$state == "Illinois") / sum(inc$state == "Maryland")
+sum(inc$city_or_county == "Chicago") / sum(inc$city_or_county == "Baltimore")
+```
+
+The Wikipedia article [Crime in Chicago](https://en.wikipedia.org/wiki/Crime_in_Chicago)
+reports the violent crime rate of Chicago as being higher than the U.S. average,
+while also being responsible for half of the increase in homicides in the
+year 2016. Likewise, the article [Crime in Baltmore](https://en.wikipedia.org/wiki/Crime_in_Baltimore)
+ranks the cities' violent crime rate "high above the national average".
+In the above plot we find Baltimore below the national average, however the
+dataset only covers gun violence specifically; here, we do indeed find
+Baltimore above the median.
+
+The next thing to look at would be the number of guns involved in the incidents.
+We find that significantly more incidents happen with a small number of guns,
+but also that the distribution is somewhat long-tailed. High number of guns
+are reported in distinct steps, i.e. there's some occurrences of 100, 200,
+300 and 400 guns reported.
+
+```{r echo=FALSE, warning=FALSE}
+guns_counted <- subset(inc, !is.na(inc$n_guns_involved) & 
+                           inc$n_guns_involved > 0)
+ggplot(guns_counted) +
+    # geom_histogram(aes(n_guns_involved), binwidth=1) +
+    geom_point(aes(n_guns_involved), stat = "count", alpha=1.0) +
+    scale_y_log10()
+```
+
+What is obvious is that the points appearing at multiples of ten stand out
+from the remaining values by following a different curve.
+While incidents with more than 50 guns appear at most once in general,
+events with e.g. 100, 200, 300 and 400 are reported significantly more often.
+Given that there are entries for 399 guns (a single time) and 400 guns 
+(four times), it could be that entries are duplicated. This turns out to be not
+the case, with entries being at different dates and states.
+
+```{r}
+subset(inc, inc$n_guns_involved > 350)[, c('date', 'state', 'n_guns_involved')]
+```
+
+When log-log transforming the data, we find that the values appear to 
+approximately follow a [Zeta distribution](https://en.wikipedia.org/wiki/Zeta_distribution), 
+i.e. seem to be (approximately) log-log linear with the probability of a given 
+number of guns being inversely proportional to the number of guns itself; we 
+also see that the plot exhibits heteroscedastic behavior (that is, variance of 
+occurrences grows with the number of guns involved). After an amount of about 
+100 guns per incident, values appear to be erratic under this assumption.
+
+```{r echo=FALSE, warning=FALSE}
+ggplot() +
+    geom_point(aes(n_guns_involved), data = guns_counted, stat = "count") +
+    geom_line(aes(y = c(2e4, 1), x=c(1, 90)), 
+              linetype = "dotted", alpha = 0.5, color = "darkred") +
+    scale_y_log10() +
+    scale_x_log10()
+```
+
