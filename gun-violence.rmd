@@ -179,7 +179,7 @@ df <- rbind(occurrences_since_2014, diff_since_2014,
             diff100_since_2014, fit_since_2014)
 rm(occurrences_since_2014, diff_since_2014, diff100_since_2014,  fit_since_2014)
 
-labels <- c("actual numbers", "one per day",  "100 per day", "regression")
+labels <- c("actual numbers", "one per day",  "100 per day", "trend line")
 
 ggplot(df, aes(date)) +
     geom_line(aes(y=count, col=type, linetype=type)) +
@@ -206,18 +206,26 @@ fit$coefficients
 
 When the (artificial) trend is removed, we obtain the number of
 incidents relative to the expected total number of incidents. A value of
-about 6000 for January 1st, 2014 implies that about 6000 more gun violence
-incedents occurred than the trendline suggests. The smallest relative number
-of incidents can be found at June 18th, 2016, with abour 3723 incidents
-less than expected.
+about 5719 for January 2nd, 2014 implies that about 5719 more gun violence
+incidents occurred than the trendline suggests.
 
-```{r lowest-number-rel-trend, echo=FALSE, warning=FALSE}
+```{r highest-number-rel-trend, echo=FALSE, warning=FALSE}
 baseline <- subset(df, type == 'baseline')
 regression <- subset(df, type == 'fit')
 delta <- baseline
 delta$count <- baseline$count - regression$count
 
-delta[which.min(delta$count), ]
+max_rel_incidents_date = delta[which.max(delta$count), ]
+max_rel_incidents_date
+```
+
+The smallest relative number
+of incidents can be found at June 18th, 2016, with about 3723 incidents
+less than expected.
+
+```{r lowest-number-rel-trend, echo=FALSE, warning=FALSE}
+min_rel_incidents_date = delta[which.min(delta$count), ]
+min_rel_incidents_date
 ```
 
 When the relative number of incidents is plotted, it becomes obvious
@@ -234,6 +242,9 @@ delta$dir <- c(NA, diff(delta$count, lag = 1, differences = 1))
 
 a <- ggplot(delta, aes(date)) +
     geom_line(aes(y=count)) +
+    geom_vline(xintercept=as.numeric(min_rel_incidents_date$date),
+                col = "darkred", 
+                lty = "dotted" ) +
     scale_x_date(date_breaks = "1 year", 
                  date_labels = '%Y', 
                  date_minor_breaks = "3 months") +
@@ -244,12 +255,15 @@ a <- ggplot(delta, aes(date)) +
 b <- ggplot(delta, aes(date)) +
     geom_smooth(aes(y=dir), method = 'loess', span = 0.1, 
                 color = 'black', size = 0.5) +
+    geom_vline(xintercept=as.numeric(min_rel_incidents_date$date),
+                col = "darkred", 
+                lty = "dotted" ) +
     scale_x_date(date_breaks = "1 year", 
                  date_labels = '%Y', 
                  date_minor_breaks = "3 months") +
     labs(title = "approximate trend direction",
          x = "date", 
-         y = "incidents/day relative to trend")
+         y = "change in incidents/day rel. to trend")
 
 grid.arrange(a, b, ncol=1)
 ```
@@ -282,13 +296,13 @@ ggplot(aes(state), data=inc) +
 
 The next look would be at the cities with the most recorded incidents (limited
 to 20 for brevity). We find that the city with the most recorded incidents
-is Chicago, IL, whis coincides with the highest number of recorded incidents
+is Chicago, IL, which coincides with the highest number of recorded incidents
 in any state. However, the second city in the list, Baltimore, is in Maryland,
 which has less than half the number of incidents of Illnois.
 Again, the numbers are put in relation to national mean (dotted red) and
 median (dashed gray) over the whole time range.
 
-```{r incidents-per-state, echo=FALSE}
+```{r incidents-per-city, echo=FALSE}
 # Most ocurrences are "other", so we skip that
 cities_most <- sort(summary(inc$city_or_county), decreasing=T)[2:21]
 cities_most <- data.frame(name = factor(names(cities_most), 
@@ -330,7 +344,7 @@ Baltimore above the median.
 The next thing to look at would be the number of guns involved in the incidents.
 We find that significantly more incidents happen with a small number of guns,
 but also that the distribution is somewhat long-tailed. High number of guns
-are reported in distinct steps, i.e. there's some occurrences of 100, 200,
+are apparently reported in distinct steps, i.e. there's some occurrences of 100, 200,
 300 and 400 guns reported.
 
 ```{r echo=FALSE, warning=FALSE}
@@ -350,14 +364,14 @@ Given that there are entries for 399 guns (a single time) and 400 guns
 (four times), it could be that entries are duplicated. This turns out to be not
 the case, with entries being at different dates and states.
 
-```{r}
+```{r, echo=FALSE}
 subset(inc, inc$n_guns_involved > 350)[, c('date', 'state', 'n_guns_involved')]
 ```
 
 When log-log transforming the data, we find that the values appear to 
 approximately approximately follow a log-log linear distribution with the
-probability of a given number of guns being inversely proportional to the 
-number of guns itself (much like a
+probability of a given number of incidents being inversely proportional to the 
+number of guns involved in the crime (much like a
 [Zipfian distribution](https://en.wikipedia.org/wiki/Zipf%27s_law)); we 
 also see that the plot exhibits heteroscedastic behavior (that is, variance of 
 occurrences grows with the number of guns involved). After an amount of about 
