@@ -2,7 +2,9 @@
 title: "Gun Violence Data EDA"
 author: "Markus Mayer"
 date: "6 Juli 2018"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -22,6 +24,10 @@ library(lubridate)
 # install.packages('dplyr')
 library(tidyr)
 library(dplyr)
+
+# rworldmap for plotting the incident locations
+# install.packages('rworldmap')
+library(rworldmap)
 ```
 
 ## Data source
@@ -78,7 +84,7 @@ and Pandas, creating four separate files,
 - `dataset/gun_use.csv` and
 - `dataset/characteristics.csv`
 
-```{r load}
+```{r load, echo=FALSE}
 rm(gv)
 inc <- read.csv('dataset/incidents.csv')
 par <- read.csv('dataset/participants.csv')
@@ -347,7 +353,7 @@ but also that the distribution is somewhat long-tailed. High number of guns
 are apparently reported in distinct steps, i.e. there's some occurrences of 100, 200,
 300 and 400 guns reported.
 
-```{r echo=FALSE, warning=FALSE}
+```{r guns-counted-log10, echo=FALSE, warning=FALSE}
 guns_counted <- subset(inc, !is.na(inc$n_guns_involved) & 
                            inc$n_guns_involved > 0)
 ggplot(guns_counted) +
@@ -377,7 +383,7 @@ also see that the plot exhibits heteroscedastic behavior (that is, variance of
 occurrences grows with the number of guns involved). After an amount of about 
 100 guns per incident, values appear to be erratic under this assumption.
 
-```{r echo=FALSE, warning=FALSE}
+```{r guns-counted-loglog, echo=FALSE, warning=FALSE}
 ggplot() +
     geom_point(aes(n_guns_involved), data = guns_counted, stat = "count") +
     geom_line(aes(y = c(2e4, 1), x=c(1, 90)), 
@@ -385,4 +391,92 @@ ggplot() +
     scale_y_log10() +
     scale_x_log10()
 ```
+Likewise, we might want to know how many people were involved in each incident:
 
+```{r participants-log10, echo=FALSE, warning=FALSE}
+participants_counted <- subset(inc, !is.na(inc$incident_participants))
+ggplot(participants_counted) +
+    geom_point(aes(incident_participants), stat = "count", alpha=1.0)
+```
+
+We find that we have an extremely high number of incidents with exactly one person and logarithmically less incidents 
+with more than one person. We also observe two interesting situations: There seems to be a single incident with 100 
+people involved, as well as about 25k incidents with no people involved at all.
+
+When we investigate the issue with the most participants, we find it to be the [Orlando nightclub shooting](https://en.wikipedia.org/wiki/Orlando_nightclub_shooting) at December 12th, 2016, where a 29-year old security 
+guard killed 49 nightclub visitors in a terroristic attack, injured 50 more and eventually got killed by the police.
+
+```{r max-incidents, echo=FALSE, warning=FALSE}
+inc[which.max(inc$incident_participants), ]
+```
+
+## Multivariate Plots
+
+The following map shows the locations of incidents. Each incident is marked with 1% transparency, i.e. it takes (at least) one hundred
+incidents in the very same location to render the marker fully red. As we can see on the map, locations of high incident counts seem 
+to cluster around the western coast of the USA and fill out the entire eastern half of the USA; at the same time, Hawaii also
+pops up in red, with two visible peaks indicating at least 200 incidents.
+
+```{r map-of-incidents, echo=FALSE, warning=FALSE}
+worldmap <- getMap(resolution = 'low')
+usa <- worldmap[which(grepl('US', worldmap$GEO3)), ]
+usa$id_1 <- row.names(usa)
+
+map <- fortify(usa)
+valid_locations = !is.na(inc$longitude) & !is.na(inc$latitude)
+incident_with_coords <- subset(inc, valid_locations)
+
+ggplot() + 
+  coord_map(xlim = c(-180, -60), ylim = c(10, 70)) +
+  geom_polygon(data = map, aes(x = long, y = lat, group = group), fill = 'gray22', alpha = 1) +
+  geom_point(data = incident_with_coords, aes(x = longitude, y = latitude), color = "red", alpha = 0.01)
+```
+
+When we count all incidents in Hawaii only, we find that we indeed have 289 occurrences:
+
+```{r hawaii-count, echo=FALSE}
+count(inc[inc$state == 'Hawaii', ])
+```
+
+The effect of having a high incident counts in eastern USA in contrast to a comparatively lower incident counts in the west
+might be explained by population density in these regions. Information about this is currently not available to me, so I'll leave
+that open for further research.
+
+We can now also identify incidents where either a high number of people involed were killed (red marker) or injured (yellow).
+
+```{r map-of-incidents-10, echo=FALSE, warning=FALSE}
+
+incident_with_coords_10k <- subset(inc, valid_locations & (inc$n_killed > 10))
+incident_with_coords_10i <- subset(inc, valid_locations & (inc$n_injured > 10))
+
+ggplot() + 
+  coord_map(xlim = c(-180, -60), ylim = c(10, 70)) +
+  geom_polygon(data = map, aes(x = long, y = lat, group = group), fill = 'gray22', alpha = 1) +
+  geom_point(data = incident_with_coords_10i, aes(x = longitude, y = latitude), color = 'yellow', alpha = 0.75) +
+  geom_point(data = incident_with_coords_10k, aes(x = longitude, y = latitude), color = 'red', alpha = 0.75)
+```
+
+When we investigate the relations the number of people killed and injured for each incident, we don't find much of 
+a meaningful relationship in general. It appears that for high numbers of people involved, the numbers are positively
+correlated. For small numbers of killings, the number of injured people also tends to be small (and vice versa).
+
+```{r, killed-injured, echo=FALSE}
+ggplot() +
+  geom_jitter(data = inc, aes(x = n_killed, y = n_injured), alpha = .2)
+```
+When we zoom into the bottom-left corner of the previous plot, we find a triangular relationship between the number of killings and
+the number of injured people. This is backed up by the plot for people involved in an incident; we already know that it is very
+likely for an incident to involve less than ten people, and very unlikely for an incident to involve more than ten. The triangular shape
+in this plot occurs since in this dataset, the number of people involved in an incident is the sum of people killed and injured in it. 
+Interestingly, the solid triangular shape suggests that the probability distribution of being injured or killed is actually uniform; 
+that is it would be equally likely to bekilled or injured when being involved in an incident. 
+However, this is a global observation and does not take into account the type of crime. For a gang fight, for example, 
+it could be assumed that every participant is actively engaging in the crime - if that type of incident would be
+the majority, the result (being killed or surviving injured) would be governed by chance.
+
+```{r, killed-injured-zoom, echo=FALSE, warning=FALSE}
+ggplot() +
+  geom_jitter(data = inc, aes(x = n_killed, y = n_injured), alpha = .2) +
+  scale_x_continuous(limits=c(0, 10)) +
+  scale_y_continuous(limits=c(0, 10))
+```

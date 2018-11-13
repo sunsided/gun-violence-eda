@@ -1,3 +1,6 @@
 .ipynb_checkpoints/
 dataset/stage3.csv
 gun-violence.html
+*.rds
+gun-violence_files/
+*.tex
