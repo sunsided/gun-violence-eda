@@ -28,6 +28,9 @@ library(dplyr)
 # rworldmap for plotting the incident locations
 # install.packages('rworldmap')
 library(rworldmap)
+
+# percentages on plot scales
+require(scales)
 ```
 
 ## Data source
@@ -399,23 +402,85 @@ ggplot(participants_counted) +
     geom_point(aes(incident_participants), stat = "count", alpha=1.0)
 ```
 
-We find that we have an extremely high number of incidents with exactly one person and logarithmically less incidents 
-with more than one person. We also observe two interesting situations: There seems to be a single incident with 100 
+We find that we have an extremely high number of incidents with exactly one
+person and logarithmically less incidents with more than one person. We also
+observe two interesting situations: There seems to be a single incident with 100 
 people involved, as well as about 25k incidents with no people involved at all.
 
-When we investigate the issue with the most participants, we find it to be the [Orlando nightclub shooting](https://en.wikipedia.org/wiki/Orlando_nightclub_shooting) at December 12th, 2016, where a 29-year old security 
-guard killed 49 nightclub visitors in a terroristic attack, injured 50 more and eventually got killed by the police.
+When we investigate the issue with the most participants, we find it to be the 
+[Orlando nightclub shooting](https://en.wikipedia.org/wiki/Orlando_nightclub_shooting) 
+at December 12th, 2016, where a 29-year old security guard killed 49 nightclub
+visitors in a terroristic attack, injured 50 more and eventually got 
+killed by the police.
 
 ```{r max-incidents, echo=FALSE, warning=FALSE}
 inc[which.max(inc$incident_participants), ]
 ```
 
-## Multivariate Plots
+There are some more variables we can look at; here's the distribution of gun
+types for all incidents where it is known:
 
-The following map shows the locations of incidents. Each incident is marked with 1% transparency, i.e. it takes (at least) one hundred
-incidents in the very same location to render the marker fully red. As we can see on the map, locations of high incident counts seem 
-to cluster around the western coast of the USA and fill out the entire eastern half of the USA; at the same time, Hawaii also
-pops up in red, with two visible peaks indicating at least 200 incidents.
+```{r gun-type, echo=FALSE}
+ggplot(aes(gun_type), data=gun[gun$gun_type != 'Unknown', ]) +
+    geom_bar(width = 0.5) +
+    coord_flip()
+```
+
+Next is the distribution of age ranges; note that this statistic includes the 
+ages of all participants, i. e. includes victims.
+
+```{r, age-groups, echo=FALSE}
+par$participant_age_group_ordered <- factor(par$participant_age_group, 
+                                            levels=c('Child 0-11', 'Teen 12-17', 
+                                                     'Adult 18+', ''), ordered=TRUE)
+ggplot(aes(participant_age_group_ordered), data=par) +
+    geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
+    scale_y_continuous(labels=percent)
+```
+
+When we next we look at the distribution of participant gender, we find that
+the participants are mostly male and the number of male participants is
+eightfold the number of female and unknown ones.
+
+```{r, gender, echo=FALSE}
+num_items <- as.integer(count(par))
+ggplot(aes(participant_gender), data=par) + 
+  geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
+  scale_y_continuous(labels=percent, name = 'share of participants', 
+                     sec.axis = sec_axis(~ . * num_items / 1000, name = "number of participants (in thousands)"))
+```
+
+Apart from the unknown block, there is a single occurrence of a `Male, female`
+case.
+
+```{r, male-female, echo=FALSE}
+par[par$participant_gender == 'Male, female', ]
+```
+
+When investigating the case, we find that it is about a [drive-by shooting in
+Marquette Park, Chicago](https://www.dnainfo.com/chicago/20141211/marquette-park/marquette-park-drive-by-wounds-woman/).
+Here, a 32 year old woman was wounded by an unknown perperatror. It seems that
+the label is single wrong.
+
+```{r, male-female-incident, echo=FALSE}
+inc[inc$incident_id == 261784, c('incident_id', 'date', 'source_url')]
+```
+
+We can correct this issue by assigning the correct gender to the case.
+
+```{r, include=FALSE}
+par[par$participant_gender == 'Male, female', ]$participant_gender = 'Female'
+```
+
+
+## Bivariate Plots
+
+The following map shows the locations of incidents. Each incident is marked
+with 1% transparency, i.e. it takes (at least) one hundred incidents in the very
+same location to render the marker fully red. As we can see on the map,
+locations of high incident counts seemto cluster around the western coast of the
+USA and fill out the entire eastern half of the USA; at the same time, Hawaii
+also pops up in red, with two visible peaks indicating at least 200 incidents.
 
 ```{r map-of-incidents, echo=FALSE, warning=FALSE}
 worldmap <- getMap(resolution = 'low')
@@ -438,11 +503,15 @@ When we count all incidents in Hawaii only, we find that we indeed have 289 occu
 count(inc[inc$state == 'Hawaii', ])
 ```
 
-The effect of having a high incident counts in eastern USA in contrast to a comparatively lower incident counts in the west
-might be explained by population density in these regions. Information about this is currently not available to me, so I'll leave
-that open for further research.
+The effect of having a high incident counts in eastern USA in contrast to a
+comparatively lower incident counts in the west might be explained by population
+density in these regions. It could also be that the dataset simply does not 
+include as much information from these areas due to the way the data was 
+collected. Information about this is currently not available to
+me, so I'll leave that open for further research.
 
-We can now also identify incidents where either a high number of people involed were killed (red marker) or injured (yellow).
+We can now also identify incidents where either a high number of people involed
+were killed (red marker) or injured (yellow).
 
 ```{r map-of-incidents-10, echo=FALSE, warning=FALSE}
 
@@ -456,27 +525,98 @@ ggplot() +
   geom_point(data = incident_with_coords_10k, aes(x = longitude, y = latitude), color = 'red', alpha = 0.75)
 ```
 
-When we investigate the relations the number of people killed and injured for each incident, we don't find much of 
-a meaningful relationship in general. It appears that for high numbers of people involved, the numbers are positively
-correlated. For small numbers of killings, the number of injured people also tends to be small (and vice versa).
+When we investigate the relations the number of people killed and injured for
+each incident, we don't find much ofa meaningful relationship in general. It
+appears that for high numbers of people involved, the numbers are positively
+correlated. For small numbers of killings, the number of injured people also
+tends to be small (and vice versa).
 
 ```{r, killed-injured, echo=FALSE}
 ggplot() +
   geom_jitter(data = inc, aes(x = n_killed, y = n_injured), alpha = .2)
 ```
-When we zoom into the bottom-left corner of the previous plot, we find a triangular relationship between the number of killings and
-the number of injured people. This is backed up by the plot for people involved in an incident; we already know that it is very
-likely for an incident to involve less than ten people, and very unlikely for an incident to involve more than ten. The triangular shape
-in this plot occurs since in this dataset, the number of people involved in an incident is the sum of people killed and injured in it. 
-Interestingly, the solid triangular shape suggests that the probability distribution of being injured or killed is actually uniform; 
-that is it would be equally likely to bekilled or injured when being involved in an incident. 
-However, this is a global observation and does not take into account the type of crime. For a gang fight, for example, 
-it could be assumed that every participant is actively engaging in the crime - if that type of incident would be
-the majority, the result (being killed or surviving injured) would be governed by chance.
+
+When we zoom into the bottom-left corner of the previous plot, we find a 
+triangular relationship between the number of killings and the number of injured
+people. This is backed up by the plot for people involved in an incident; we 
+already know that it is very likely for an incident to involve less than ten
+people, and very unlikely for an incident to involve more than ten. The
+triangular shape in this plot occurs since in this dataset, the number of people
+involved in an incident is the sum of people killed and injured in it. 
+Interestingly, the solid triangular shape suggests that the probability
+distribution of being injured or killed is actually uniform; that is it would be
+equally likely to bekilled or injured when being involved in an incident. 
+However, this is a global observation and does not take into account the type of
+crime. For a gang fight, for example, it could be assumed that every participant
+is actively engaging in the crime - if that type of incident would be
+the majority, the result (being killed or surviving injured) would be governed 
+by chance.
 
 ```{r, killed-injured-zoom, echo=FALSE, warning=FALSE}
 ggplot() +
   geom_jitter(data = inc, aes(x = n_killed, y = n_injured), alpha = .2) +
   scale_x_continuous(limits=c(0, 10)) +
   scale_y_continuous(limits=c(0, 10))
+```
+
+When splitting participant gender statistics into subject and victim groups,
+we find a picture that is generally proportional to the overall distribution we
+saw before. While the number of male participants is significantly larger
+than the number of female or unknown participants, the number of subjects and
+suspects is roughly the same as the number of victims.
+We do find antiproportional behavior between male and femals groups though:
+Where there are more male subjects and suspects than victims, there are
+more female victims than subjects and suspects.
+
+```{r, gender-type, echo=FALSE, warning=FALSE}
+ggplot() +
+  geom_count(data=par, mapping=aes(x=participant_type, y=participant_gender,
+                                   shape=participant_gender, color=participant_type)) +
+  scale_size_area(max_size=14)
+```
+
+When we investigate the relative distribution of
+subject/suspect and victim within each gender group, we find a
+much clearer picture: Not only there are significantly less women involved
+in gun related incidents, more than 72.3% of them are victims.
+In contrast, 55.2% of all men involved are subjects or suspects.
+
+```{r, gender-type-bar, echo=FALSE, warning=FALSE}
+ggplot(aes(x=participant_type), data=par) +
+  geom_bar(aes(y = (..count..)/tapply(..count..,..PANEL..,sum)[..PANEL..]), width = 0.5) +
+  facet_grid(rows = vars(participant_gender)) +
+  scale_y_continuous(labels=percent)
+```
+
+Here's the actual counts and percentages normalized per gender, excluding
+unknown gender:
+
+```{r, gender-type-statistics, echo=FALSE}
+female.count <- as.integer(count(par[(par$participant_gender == 'Female'), ]))
+male.count <- as.integer(count(par[(par$participant_gender == 'Male'), ]))
+
+victims.female.count <- as.integer(count(par[(par$participant_gender == 'Female') & 
+                                               (par$participant_type == 'Victim'), ]))
+victims.female.percentage <- victims.female.count / female.count
+
+subject.female.count <- as.integer(count(par[(par$participant_gender == 'Female') & 
+                                               (par$participant_type == 'Subject-Suspect'), ]))
+subject.female.percentage <- subject.female.count / female.count
+
+victims.male.count <- as.integer(count(par[(par$participant_gender == 'Male') & 
+                                             (par$participant_type == 'Victim'), ]))
+victims.male.percentage <- victims.male.count / male.count
+
+subject.male.count <- as.integer(count(par[(par$participant_gender == 'Male') & 
+                                             (par$participant_type == 'Subject-Suspect'), ]))
+subject.male.percentage <- subject.male.count / male.count
+
+gender <- as.factor(c('Female', 'Female', 'Male', 'Male'))
+type <- as.factor(c('Victim', 'Subject/Suspect', 'Victim', 'Subject/Suspect'))
+percentages <- unlist(c(victims.female.percentage, subject.female.percentage, 
+                        victims.male.percentage, subject.male.percentage))
+counts <- unlist(c(victims.female.count, subject.female.count, 
+                        victims.male.count, subject.male.count))
+participant_stats <- data.frame('Gender' = gender, 'Type' = type, 'Percentage' = percentages, 'Count' = counts)
+participant_stats
 ```
