@@ -3,8 +3,8 @@ title: "Gun Violence Data EDA"
 author: "Markus Mayer"
 date: "6 Juli 2018"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -613,10 +613,11 @@ subject.male.percentage <- subject.male.count / male.count
 
 gender <- as.factor(c('Female', 'Female', 'Male', 'Male'))
 type <- as.factor(c('Victim', 'Subject/Suspect', 'Victim', 'Subject/Suspect'))
-percentages <- unlist(c(victims.female.percentage, subject.female.percentage, 
+proportion <- unlist(c(victims.female.percentage, subject.female.percentage, 
                         victims.male.percentage, subject.male.percentage))
 counts <- unlist(c(victims.female.count, subject.female.count, 
                         victims.male.count, subject.male.count))
-participant_stats <- data.frame('Gender' = gender, 'Type' = type, 'Percentage' = percentages, 'Count' = counts)
+participant_stats <- data.frame('Gender' = gender, 'Type' = type, 
+                                'Proportion' = proportion, 'Count' = counts)
 participant_stats
 ```
