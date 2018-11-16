@@ -438,18 +438,6 @@ ggplot(aes(participant_age_group_ordered), data=par) +
     scale_y_continuous(labels=percent)
 ```
 
-When we next we look at the distribution of participant gender, we find that
-the participants are mostly male and the number of male participants is
-eightfold the number of female and unknown ones.
-
-```{r, gender, echo=FALSE}
-num_items <- as.integer(count(par))
-ggplot(aes(participant_gender), data=par) + 
-  geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
-  scale_y_continuous(labels=percent, name = 'share of participants', 
-                     sec.axis = sec_axis(~ . * num_items / 1000, name = "number of participants (in thousands)"))
-```
-
 Apart from the unknown block, there is a single occurrence of a `Male, female`
 case.
 
@@ -471,6 +459,57 @@ We can correct this issue by assigning the correct gender to the case.
 ```{r, include=FALSE}
 par[par$participant_gender == 'Male, female', ]$participant_gender = 'Female'
 ```
+
+When we look at the actual ages, we find that the median is 26 years, and that
+75% of all participants were younger than 35 years, however there appear to be
+some outliers on the lower and upper ends:
+
+```{r, age-stats, echo=FALSE}
+summary(par$participant_age)
+```
+
+Let's just quickly see cases where a participant was reported as older than
+100 years, an arbitrarily chosen threshold.
+
+```{r, age-list, echo=FALSE}
+par_extreme_ages <- par[!is.na(par$participant_age) & par$participant_age > 100, ]
+par_extreme_ages
+```
+
+Looking at the source material for these incidents it turns out that the cases
+with 101 year old participants are actually correct, whereas the bigger numbers
+are wrong. We can thus fix them.
+
+```{r, age-list-extreme, echo=FALSE}
+inc_par <- right_join(inc, par_extreme_ages, by = 'incident_id')
+inc_par[, c('incident_id', 'date', 'participant_age', 'incident_url')]
+```
+
+```{r, fix-ages, include=FALSE}
+par[par$incident_id == 926498, ]$participant_age <- 33
+par[par$incident_id == 1001184, ]$participant_age <- 31
+```
+
+We can now look at the participant age distribution.
+
+```{r, ages, echo=FALSE}
+ggplot(aes(participant_age), data=par[!is.na(par$participant_age), ]) +
+    geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
+    scale_y_continuous(labels=percent)
+```
+
+When we next we look at the distribution of participant gender, we find that
+the participants are mostly male and the number of male participants is
+eightfold the number of female and unknown ones.
+
+```{r, gender, echo=FALSE}
+num_items <- as.integer(count(par))
+ggplot(aes(participant_gender), data=par) + 
+  geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
+  scale_y_continuous(labels=percent, name = 'share of participants', 
+                     sec.axis = sec_axis(~ . * num_items / 1000, name = "number of participants (in thousands)"))
+```
+
 
 
 ## Bivariate Plots
@@ -510,23 +549,8 @@ include as much information from these areas due to the way the data was
 collected. Information about this is currently not available to
 me, so I'll leave that open for further research.
 
-We can now also identify incidents where either a high number of people involed
-were killed (red marker) or injured (yellow).
-
-```{r map-of-incidents-10, echo=FALSE, warning=FALSE}
-
-incident_with_coords_10k <- subset(inc, valid_locations & (inc$n_killed > 10))
-incident_with_coords_10i <- subset(inc, valid_locations & (inc$n_injured > 10))
-
-ggplot() + 
-  coord_map(xlim = c(-180, -60), ylim = c(10, 70)) +
-  geom_polygon(data = map, aes(x = long, y = lat, group = group), fill = 'gray22', alpha = 1) +
-  geom_point(data = incident_with_coords_10i, aes(x = longitude, y = latitude), color = 'yellow', alpha = 0.75) +
-  geom_point(data = incident_with_coords_10k, aes(x = longitude, y = latitude), color = 'red', alpha = 0.75)
-```
-
 When we investigate the relations the number of people killed and injured for
-each incident, we don't find much ofa meaningful relationship in general. It
+each incident, we don't find much of a meaningful relationship in general. It
 appears that for high numbers of people involved, the numbers are positively
 correlated. For small numbers of killings, the number of injured people also
 tends to be small (and vice versa).
@@ -621,3 +645,94 @@ participant_stats <- data.frame('Gender' = gender, 'Type' = type,
                                 'Proportion' = proportion, 'Count' = counts)
 participant_stats
 ```
+
+Before we looked at the age statistics for all participants. Let's now
+have a look at the ages of subjects/suspects and victims:
+
+```{r, ages-facet, echo=FALSE}
+ggplot(aes(participant_age), data=par[!is.na(par$participant_age), ]) +
+    geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
+    scale_y_continuous(labels=percent) +
+  facet_grid(rows = vars(participant_type))
+```
+
+Interestingly, the distributions don't have a vastly different shape, apart
+from showing more younger victims than subjects/suspects, as well as a higher
+number in subjects/suspects at ages around 20, compared to victims at that age.
+There still seem to be some outliers for the ages, such as victims aged zero
+and victims aged 80+:
+
+```{r, ages-summary-subject, echo=FALSE}
+par.has_age <- !is.na(par$participant_age)
+par.is_subject <- par$participant_type == 'Subject-Suspect'
+par.is_victim <- par$participant_type == 'Victim'
+summary(par[par.has_age & par.is_subject, "participant_age"])
+```
+
+The age statistics for victims do look similar, with the distribution being
+somewhat more long-tailed:
+
+```{r, ages-summary-victim, echo=FALSE}
+summary(par[par.has_age & par.is_victim, "participant_age"])
+```
+
+It turns out that the cases with old subjects/suspects are actually correct,
+such as a June 6th, 2015 case where a 98 year old husband apparently killed
+his 94 year old wife. The case of the zero-year old subject turns out to be
+wrong, however the source material is not available anymore. On the other hand, 
+the cases of one year old subjects appear to be correct: These are, for example,
+about accidental killings using unsecured guns.
+
+```{r, age-outlier-subjects, echo=FALSE}
+sub_extreme_ages <- par[par.has_age & par.is_subject & ((par$participant_age < 2) | (par$participant_age >= 95)), ]
+inc_par <- right_join(inc, sub_extreme_ages, by = 'incident_id')
+inc_par[, c('incident_id', 'date', 'participant_age', 'incident_url')]
+```
+
+When we zoom in on the age group 0-18, we find that there is a slightly higher
+number of victims age three compared to any other age below 10. It could be
+interesting to investigate the reasons for this.
+
+```{r, ages-facet-young, echo=FALSE}
+par_young_ages <- par[par.has_age & par$participant_age < 18, ]
+ggplot(aes(participant_age), data=par_young_ages) +
+    geom_bar(aes(y = (..count..)/sum(..count..)), width = 0.5) +
+    scale_y_continuous(labels=percent) +
+  facet_grid(rows = vars(participant_type))
+```
+
+## Multivariate plots
+
+Revisiting the previously drawn map, we can also identify incidents where
+either a high number of people involved were killed (red marker) or 
+injured (yellow).
+
+```{r map-of-incidents-10, echo=FALSE, warning=FALSE}
+
+incident_with_coords_10k <- subset(inc, valid_locations & (inc$n_killed > 10))
+incident_with_coords_10i <- subset(inc, valid_locations & (inc$n_injured > 10))
+
+ggplot() + 
+  coord_map(xlim = c(-180, -60), ylim = c(10, 70)) +
+  geom_polygon(data = map, aes(x = long, y = lat, group = group), fill = 'gray22', alpha = 1) +
+  geom_point(data = incident_with_coords_10i, aes(x = longitude, y = latitude), color = 'yellow', alpha = 0.75) +
+  geom_point(data = incident_with_coords_10k, aes(x = longitude, y = latitude), color = 'red', alpha = 0.75)
+```
+
+To connect the map with the previous age observations, let's have a look
+at the locations of incidents by age group.
+
+```{r map-of-incidents-by-age, echo=FALSE, warning=FALSE}
+inc_par <- inner_join(inc, par, 'incident_id')
+
+ggplot() + 
+  coord_map(xlim = c(-180, -60), ylim = c(10, 70)) +
+  geom_polygon(data = map, aes(x = long, y = lat, group = group), fill = 'gray22', alpha = 1) +
+  geom_point(data = inc_par, aes(x = longitude, y = latitude), color = 'red', alpha = 0.01) + 
+  facet_grid(participant_type ~ participant_age_group_ordered)
+```
+
+We find that the general appearance of the map doesn't change much, indicating
+that locations of incidents are generally independent of age.
+
+TODO: Distribution of subject age in relation to victim age by gender.
