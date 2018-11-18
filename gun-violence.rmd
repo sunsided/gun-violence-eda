@@ -552,12 +552,32 @@ me, so I'll leave that open for further research.
 When we investigate the relations the number of people killed and injured for
 each incident, we don't find much of a meaningful relationship in general. It
 appears that for high numbers of people involved, the numbers are positively
-correlated. For small numbers of killings, the number of injured people also
-tends to be small (and vice versa).
+correlated; due to lack of data points there is no solid evidence for this 
+however. For small numbers of killings, the number of injured people also
+appears to be small (and vice versa).
 
 ```{r, killed-injured, echo=FALSE}
 ggplot() +
   geom_jitter(data = inc, aes(x = n_killed, y = n_injured), alpha = .2)
+```
+
+
+When we look at the overall correlation coefficients, we find that the data 
+doesn't seem to be linearly correlated; if at all, for bigger numbers of
+killed participants, the number of injured participants gets smaller.
+
+```{r, killed-injured-correlation, echo=FALSE}
+cor(inc[, c('n_killed', 'n_injured')])
+```
+
+It makes sense: For two people, when the number of killed participants rises,
+the number of injured people must get smaller.
+
+When we focus on all incidents with more than two killed participants though,
+we find a rather strong correlation:
+
+```{r, killed-injured-correlation-2plus, echo=FALSE}
+cor(inc[inc$n_killed > 2, c('n_killed', 'n_injured')])
 ```
 
 When we zoom into the bottom-left corner of the previous plot, we find a 
@@ -735,4 +755,79 @@ ggplot() +
 We find that the general appearance of the map doesn't change much, indicating
 that locations of incidents are generally independent of age.
 
-TODO: Distribution of subject age in relation to victim age by gender.
+We already know that there are significantly more male than female
+subjects and suspects, but we didn't take age into account yet. Let's now
+have a look at the distribution of subject/suspect age over victim age
+conditioned on both the subject/suspect and the victim's gender:
+
+```{r, subjects-vs-victims-by-age, echo=FALSE}
+# Obtain all subjects and victims, then join them up into subject-victim pairs
+par.has_gender <- par$participant_gender != ''
+subjects.ag <- par[par.has_gender & par.has_age & par.is_subject, 
+                   c('incident_id', 'participant_age', 'participant_gender')]
+victims.ag <- par[par.has_gender & par.has_age & par.is_victim, 
+                  c('incident_id', 'participant_age', 'participant_gender')]
+ag <- inner_join(subjects.ag, victims.ag, by = 'incident_id')
+ag <- rename(ag, subject_age=participant_age.x, subject_gender=participant_gender.x,
+           victim_age=participant_age.y, victim_gender=participant_gender.y)
+
+ggplot(ag, aes(x=subject_age, y=victim_age)) +
+    geom_point(alpha=0.01) +
+  # geom_smooth(method='auto', se=FALSE) +
+  facet_grid(rows=vars(victim_gender), cols=vars(subject_gender))
+```
+
+From a visual evaluation alone we find that two different pattern emerge: 
+Although ages seems to be generally correlated, for 
+both same-gender situations, ages seem to be centered at around 20-25 years 
+of age and vary wildly. For cross-gender situations however, age seems to be 
+strongly linearly correlated. The plots show heteroscedastic behavior, where 
+for lower suspect/subject ages, variance of victim age is much bigger compared 
+to higher suspect/subject ages. 
+
+In both male and female subject/suspect scenarios, there seems to be a spike 
+specifically at ages 18 to 25, showingthat in that age range, victim age is 
+likely to be higher than the subject's/suspect's age.
+
+When we look at the correlation coefficient for male-male incidents,
+we find it to be at about `0.3`.
+
+```{r, correlation-male-male, echo=FALSE}
+ag.grownup <- ag$subject_age > 18
+ag.victim_male <- ag$victim_gender == 'Male'
+ag.victim_female <- ag$victim_gender == 'Female'
+ag.subject_male <- ag$subject_gender == 'Male'
+ag.subject_female <- ag$subject_gender == 'Female'
+cmm <- cor(ag[ag.grownup & ag.subject_male & ag.victim_male, c('victim_age', 'subject_age')])
+cmm['victim_age', 'subject_age']
+```
+
+A similar behavior is found for female-female incidents, at a low
+correlation coefficient at `0.27`: 
+
+```{r, correlation-female-female, echo=FALSE}
+cmm <- cor(ag[ag.grownup & ag.subject_female & ag.victim_female, c('victim_age', 'subject_age')])
+cmm['victim_age', 'subject_age']
+```
+
+In comparison, incidents with a male subject/suspect and a female victim are
+correlated at `0.51`.
+
+```{r, correlation-male-female, echo=FALSE}
+cmm <- cor(ag[ag.grownup & ag.subject_male & ag.victim_female, c('victim_age', 'subject_age')])
+cmm['victim_age', 'subject_age']
+```
+
+Likewise, when we look at female subjects/suspects and male victims, we also 
+find a higher correlation coefficient at about `0.43`:
+
+```{r, correlation-female-male, echo=FALSE}
+cmm <- cor(ag[ag.grownup & ag.subject_female & ag.victim_male, c('victim_age', 'subject_age')])
+cmm['victim_age', 'subject_age']
+```
+
+One possible way of explaining this behavior could be that a tendency for 
+domestic violence is either emerging with higher ages or overshadowed 
+by more "eratic" incidents at younger ages; there is, however, _no evidence_ for
+this theory from the data so far, although the `incident_characteristic` column
+might be mined in order to possibly support or discard that narrative.
